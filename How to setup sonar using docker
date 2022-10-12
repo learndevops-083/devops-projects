@@ -1,0 +1,161 @@
+How To Install &  Set Up SonarQube using docker integrate with pipepline 
+
+
+Run the following commands below to setup Sonarqube you can run the docker install steps if you dont have docker installed .
+
+STEP 1 
+
+1.	Set up docker repository
+
+sudo yum install -y yum-utils
+
+ 
+sudo yum-config-manager \
+    --add-repo \
+    https://download.docker.com/linux/centos/docker-ce.repo
+
+
+2.	Install Docker Engine
+
+sudo yum install docker-ce docker-ce-cli containerd.io
+(applicable to AWS) sudo yum install docker*
+
+
+3.	Start and Enable Docker
+
+sudo systemctl start docker
+sudo systemctl enable docker
+
+
+4. Run the command below to add your user to run docker commands
+sudo usermod -aG docker rocky //using rocky linux
+su - rocky
+
+
+5. Run the docker command below to  pull a docker image and run it 
+
+sudo docker run --rm \
+   -p 9000:9000 \
+   -v sonarqube_extensions:/opt/sonarqube/extensions \
+   -v sonarqube_data:/opt/sonarqube/data \
+   -v sonarqube_conf:/opt/sonarqube/conf \
+   sonarqube > /dev/null 2>&1 &
+
+
+
+
+
+
+6.Run Docker ps 	
+$ docker ps
+
+CONTAINER ID   IMAGE       COMMAND                  CREATED       STATUS       PORTS                                       NAMES
+94d3ab029dfb   sonarqube   "/opt/sonarqube/bin/…"   9 hours ago   Up 9 hours   0.0.0.0:9000->9000/tcp, :::9000->9000/tcp   frosty_albattan
+ 
+
+
+
+7.To interact with the running container via shell / manage the container the  commands  below are what devops engineer use
+
+ docker exec -it  container id /bin/bash
+ docker stats container id
+ docker logs container id
+ docker inspect container id
+ docker stop container id
+
+Step 2
+After verifying that the docker container for  Sonarqube is running  successfully go to your browser & access the sonarqube API with your public ip and port 9000
+
+http://15.204.172.230:9000/
+login to sonarqube ( default credentials admin/admin )
+change the default password 
+After you login go to  your 
+Account profile→ security → generate token
+//copy this token and save it .it will be used to authenticate jenkins with sonar)
+
+
+Next you will create a webhook connection that will point back to  your jenkins instance  form sonar to share results of the analysis
+On your Sonarqube panel Go to Administration → Configuration → Webhooks
+//Create a new webhook and name your webhook 
+The url section should point to your jenkins server 
+http://15.204.172.230:8080/sonarqube-webhook/
+
+
+Sonar  Configuration and setup  in Jenkins
+
+Step 3
+go to Jenkins console
+Manage Jenkins →  manage plugins → download sonarqube scanner plugin
+
+Manage Jenkins → global tool configuration → sonarQube scanner installations 
+
+Give your scanner a name -> Click install automatically select SonarQube scanner 4.6.2.2472
+Click apply → save
+
+
+Step 4
+
+//go to 
+manage Jenkins--->manage credentials-->new credential-->secret text→ give your token an id 
+paste your token generated in sonar and give your authentication and iD name.
+manage Jenkins --> configure system 
+//scroll down to where you have your sonarQube server option
+click add sonarqube server
+copy your sonarqube server url and paste here e.g http://15.204.172.230:9000
+select the authentication option your saved authentication will be shown
+Name your sonarqube server→ sonarqube
+click on apply and save. 
+
+
+Step 5
+Configure Sonaqube-Scanner Properties
+
+Go to your Jenkins server to this directory that's where our sonar scanner is installed.
+cd  /var/lib/jenkins/tools/hudson.plugins.sonar.SonarRunnerInstallation/sonarqube-scanner/conf
+
+//you list the contents of the directory, use a text editor to edit the sonar-scanner.properties
+$ ls -lrt 
+sonar-scanner.properties
+
+
+$ sudo Vi  sonar-scanner.properties
+
+Add the following fields 
+   
+   sonar.host.url=http://15.204.172.230:9000/  //the url of your sonarqubesvr
+   sonar.login=squ_454548763999ebf6b23764630d95ba7f8bcb8739
+   sonar.java.binaries=target/classes
+   sonar.language=java
+   sonar.sources=src/main/java
+   sonar.sourceEncoding=UTF-8
+
+
+The fields below we will add in our pipeline note this 
+
+-Dsonar.projectKey=mavenapp
+-Dsonar.sources=.
+ 
+
+##Adding sonar to our pipeline script 
+
+Step 6
+
+stage('Scan-sonar') {
+                environment {
+                   scannerHome = tool 'sonarqube-scanner'
+                 }
+              
+             steps {
+                withSonarQubeEnv('sonarqube') { 
+               
+                    sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=mavenapp -Dsonar.sources=.  "
+                   }
+                        timeout(time: 3, unit: 'MINUTES') {
+                        waitForQualityGate abortPipeline: true
+               }
+      }
+    }
+
+Save and Build the Pipeline
+
+
